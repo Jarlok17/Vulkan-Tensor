@@ -1,1 +1,8 @@
+.husky/
+
 src/shaders/*.spv
+Manifest.toml
+package-lock.json
+package.json
+node_modules/
+commitlint.config.js
