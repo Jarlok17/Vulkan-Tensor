@@ -1,0 +1,14 @@
+name = "Tensor"
+uuid = "d66db227-38ff-49fa-9658-6127e60ff848"
+authors = ["zero"]
+version = "0.1.0"
+
+[deps]
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+VulkanCore = "16167f82-ea26-5cba-b1de-ed6fd5e30a11"
+
+[compat]
+CUDA = "5.8.3"
+Test = "1.11.0"
+VulkanCore = "1.3.1"
