@@ -3,6 +3,6 @@ module Tensor
 include("cputensor.jl")
 include("vulkantensor.jl")
 
-export RawTensor, CPUTensor, add, minus, multiply, divide
+export GPUTensor, CPUTensor, add, minus, multiply, divide
 
 end
