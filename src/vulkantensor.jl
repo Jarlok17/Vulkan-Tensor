@@ -4,18 +4,18 @@ include("init_vulkan.jl")
 using .InitVulkan
 using VulkanCore.LibVulkan
 
-export RawTensor, Array
+export GPUTensor, Array
 
 InitVulkan.init_vulkan()
 
 abstract type AbstractGPUTensor{T, N} <: AbstractArray{T, N} end
 
-mutable struct RawTensor{T,N} <: AbstractGPUTensor{T, N}
+mutable struct GPUTensor{T,N} <: AbstractGPUTensor{T, N}
 	buffer::BufferBlock
 	dims::Dims{N}
 end
 
-function RawTensor(arr::Array{T, N}) where {T, N}
+function GPUTensor(arr::Array{T, N}) where {T, N}
 	nbytes = UInt64(sizeof(arr))
 	
 	staging = create_gpu_buffer(InitVulkan.devices[].logical_device, InitVulkan.m_props[], nbytes;
@@ -37,10 +37,10 @@ function RawTensor(arr::Array{T, N}) where {T, N}
 	InitVulkan.create_command_pool(cmd_pool, InitVulkan.devices[].queue_family)
 	copy_buffer(cmd_pool, InitVulkan.devices[].queue, staging, buf, nbytes)
 
-	return RawTensor{T,N}(buf, size(arr))
+	return GPUTensor{T,N}(buf, size(arr))
 end
 
-function Array(t::RawTensor{T,N}) where {T,N}
+function Array(t::GPUTensor{T,N}) where {T,N}
 	nbytes = UInt64(prod(t.dims) * sizeof(T))
 
 	readback = create_gpu_buffer(InitVulkan.devices[].logical_device, InitVulkan.m_props[], nbytes;
@@ -56,7 +56,7 @@ function Array(t::RawTensor{T,N}) where {T,N}
 end
 
 # Arithmetic operations
-function add!(out::RawTensor, a::RawTensor, b::RawTensor)
+function add!(out::GPUTensor, a::GPUTensor, b::GPUTensor)
 	update_descriptor_sets(
 		InitVulkan.devices[].logical_device,
 		InitVulkan.descriptor_sets[:add],
@@ -74,15 +74,15 @@ function add!(out::RawTensor, a::RawTensor, b::RawTensor)
 	return out
 end
 
-@inline function add(a::RawTensor, b::RawTensor)
+@inline function add(a::GPUTensor, b::GPUTensor)
 	@assert a.dims == b.dims
 
-	out = RawTensor(zeros(Float32, a.dims))
+	out = GPUTensor(zeros(Float32, a.dims))
 	add!(out, a, b)
 	return out
 end
 
-function minus!(out::RawTensor, a::RawTensor, b::RawTensor)
+function minus!(out::GPUTensor, a::GPUTensor, b::GPUTensor)
 	update_descriptor_sets(
 		InitVulkan.devices[].logical_device,
 		InitVulkan.descriptor_sets[:sub],
@@ -100,13 +100,13 @@ function minus!(out::RawTensor, a::RawTensor, b::RawTensor)
 	return out
 end
 
-@inline function minus(a::RawTensor, b::RawTensor)
-	out = RawTensor(zeros(Float32, a.dims))
+@inline function minus(a::GPUTensor, b::GPUTensor)
+	out = GPUTensor(zeros(Float32, a.dims))
 	minus!(out, a, b)
 	return out
 end
 
-function mul!(out::RawTensor, a::RawTensor, b::RawTensor)
+function mul!(out::GPUTensor, a::GPUTensor, b::GPUTensor)
 	update_descriptor_sets(
 		InitVulkan.devices[].logical_device,
 		InitVulkan.descriptor_sets[:mul],
@@ -124,14 +124,14 @@ function mul!(out::RawTensor, a::RawTensor, b::RawTensor)
 	return out
 end
 
-@inline function multiply(a::RawTensor, b::RawTensor)
+@inline function multiply(a::GPUTensor, b::GPUTensor)
 	@assert a.dims == b.dims
-	out = RawTensor(zeros(Float32, a.dims))
+	out = GPUTensor(zeros(Float32, a.dims))
 	mul!(out, a, b)
 	return out
 end
 
-function div!(out::RawTensor, a::RawTensor, b::RawTensor)
+function div!(out::GPUTensor, a::GPUTensor, b::GPUTensor)
 	update_descriptor_sets(
 		InitVulkan.devices[].logical_device,
 		InitVulkan.descriptor_sets[:div],
@@ -149,16 +149,16 @@ function div!(out::RawTensor, a::RawTensor, b::RawTensor)
 	return out
 end
 
-@inline function divide(a::RawTensor, b::RawTensor)
+@inline function divide(a::GPUTensor, b::GPUTensor)
 	@assert a.dims == b.dims
-	out = RawTensor(zeros(Float32, a.dims))
+	out = GPUTensor(zeros(Float32, a.dims))
 	div!(out, a, b)
 	return out
 end
 
-@inline function Base.show(io::IO, t::RawTensor)
+@inline function Base.show(io::IO, t::GPUTensor)
     arr = Array(t)
-    print(io, "RawTensor(")
+    print(io, "GPUTensor(")
     _show_array(io, arr, 1)
     print(io, ", dims=$(t.dims), dtype=$(eltype(arr)))")
 end
