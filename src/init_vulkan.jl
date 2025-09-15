@@ -361,32 +361,17 @@ function readback_aligned(T, block::BufferBlock, count::Int, alignment::Int)
 	return vals
 end
 
-function create_bindings()
-	bindings = [
-		VkDescriptorSetLayoutBinding(
-			0,
-			VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-			1,
-			VK_SHADER_STAGE_COMPUTE_BIT,
-			C_NULL
-		),
-		VkDescriptorSetLayoutBinding(
-			1,
-			VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-			1,
-			VK_SHADER_STAGE_COMPUTE_BIT,
-			C_NULL
-		),
-		VkDescriptorSetLayoutBinding(
-			2,
-			VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-			1,
-			VK_SHADER_STAGE_COMPUTE_BIT,
-			C_NULL
-		)
-	]
-	return bindings
-end 
+function create_bindings(num_buffers::Int64)
+    return [
+        VkDescriptorSetLayoutBinding(
+            i,
+            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            1,
+            VK_SHADER_STAGE_COMPUTE_BIT,
+            C_NULL
+        ) for i in 0:num_buffers-1
+    ]
+end
 
 function create_descriptior_set_layout(device::VkDevice, bindings::Vector{VkDescriptorSetLayoutBinding})
 	descr_set_info = VkDescriptorSetLayoutCreateInfo(
@@ -447,52 +432,22 @@ end
 
 function update_descriptor_sets(device::VkDevice,
 				desc_set::VkDescriptorSet,
-				inputA::BufferBlock,
-				inputB::BufferBlock,
-				output::BufferBlock)
-	infos = [
-		VkDescriptorBufferInfo(inputA.buffer, 0, inputA.size),
-		VkDescriptorBufferInfo(inputB.buffer, 0, inputB.size),
-		VkDescriptorBufferInfo(output.buffer, 0, output.size)
-	]
+				buffers::BufferBlock...)
+	infos = [VkDescriptorBufferInfo(buf.buffer, 0, buf.size) for buf in buffers]
 
 	writes = [
 		VkWriteDescriptorSet(
 			VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
 			C_NULL,
 			desc_set,
-			0,
-			0,
-			1,
-			VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-			C_NULL,
-			pointer(infos),
-			C_NULL
-		),
-		VkWriteDescriptorSet(
-			VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-			C_NULL,
-			desc_set,
-			1,
+			i,
 			0,
 			1,
 			VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
 			C_NULL,
-			pointer(infos) + sizeof(VkDescriptorBufferInfo),
+			pointer(infos) + (i * sizeof(VkDescriptorBufferInfo)),
 			C_NULL
-		),
-		VkWriteDescriptorSet(
-			VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-			C_NULL,
-			desc_set,
-			2,
-			0,
-			1,
-			VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-			C_NULL,
-			pointer(infos) + 2*sizeof(VkDescriptorBufferInfo),
-			C_NULL
-		)
+		) for i in 0:length(buffers)-1
 	]
 
 	GC.@preserve infos desc_set begin
@@ -509,7 +464,8 @@ function dispatch_compute(commandPool::CommandPoolInfo,
 			  pipeline::VkPipeline,
 			  pipelineLayout::VkPipelineLayout,
 			  desc_set::VkDescriptorSet,
-			  x::UInt32, y::UInt32, z::UInt32)
+			  x::UInt32, y::UInt32, z::UInt32,
+			  push_constant::Vector{UInt8} = UInt8[])
 	cmd_buf = begin_single_time_commands(commandPool)
 
 	vkCmdBindPipeline(cmd_buf, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline)
@@ -526,14 +482,16 @@ function dispatch_compute(commandPool::CommandPoolInfo,
 		)	
 	end
 	
-	# vkCmdPushConstants(
-	# 	commandPool.commandBuffer,
-	# 	pipelineLayout,
-	# 	VK_SHADER_STAGE_COMPUTE_BIT,
-	# 	0,
-	# 	sizeof(Int32),
-	# 	Ref(Int32(op))
-	# )
+	if !isempty(push_constant)
+		vkCmdPushConstants(
+			commandPool.commandBuffer,
+			pipelineLayout,
+			VK_SHADER_STAGE_COMPUTE_BIT,
+			0,
+			length(push_constant),
+			pointer(push_constant)
+		)
+	end
 
 	vkCmdDispatch(cmd_buf, x, y, z)
 
@@ -545,11 +503,10 @@ function launch_arithmetic!(cmd_pool::CommandPoolInfo,
                             pipeline::VkPipeline,
                             pipelineLayout::VkPipelineLayout,
 			    desc_set::VkDescriptorSet,
-			    N::Int, local_size::Int = 64)
-	@assert local_size <= physical_device_props[].limits.maxComputeWorkGroupSize[1]
+			    N::Int; local_size::Int = 64, push_constant::Vector{UInt8} = UInt8[])
 	wg = UInt32(cld(N, local_size))
 	dispatch_compute(cmd_pool, queue, pipeline, pipelineLayout, desc_set,
-		  wg, UInt32(1), UInt32(1))
+		  wg, UInt32(1), UInt32(1), push_constant)
 end
 
 mutable struct PipelineInfo
@@ -690,9 +647,9 @@ function init_vulkan()
 	println("Vulkan initialized with GPU: ", devices[].name)
 end
 
-function init_pipeline(device::VkDevice, spv_path::String; bindings::Vector{VkDescriptorSetLayoutBinding}=create_bindings(), with_push_const::Bool=true)
+function init_pipeline(device::VkDevice, spv_path::String; num_buffers::Int64 = 3, with_push_const::Bool=true)
     shaderModule = create_shader_module(device, spv_path)
-    setLayout    = create_descriptior_set_layout(device, bindings)
+	setLayout    = create_descriptior_set_layout(device, create_bindings(num_buffers))
 
     push_const = VkPushConstantRange(
         VK_SHADER_STAGE_COMPUTE_BIT,
